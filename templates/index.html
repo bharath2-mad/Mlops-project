@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fitness Activity Classification</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Fitness Activity Classification</h1>
+      <p>Enter a reading from your wearable and the model tells you whether you were resting, walking, running or cycling.</p>
+    </header>
+
+    <div class="layout">
+      <section class="panel">
+        <h2>Sensor reading</h2>
+        <div class="presets">
+          <button type="button" data-preset="resting">Resting</button>
+          <button type="button" data-preset="walking">Walking</button>
+          <button type="button" data-preset="running">Running</button>
+          <button type="button" data-preset="cycling">Cycling</button>
+        </div>
+
+        <div class="fields">
+          <label>Heart rate (bpm)
+            <input id="heart_rate" type="number" step="any" placeholder="e.g. 95">
+          </label>
+          <label>Average acceleration (g)
+            <input id="accel_mean" type="number" step="any" placeholder="e.g. 1.1">
+          </label>
+          <label>Acceleration variation (g)
+            <input id="accel_std" type="number" step="any" placeholder="e.g. 0.3">
+          </label>
+          <label>Cadence (steps or rpm)
+            <input id="cadence" type="number" step="any" placeholder="e.g. 105">
+          </label>
+        </div>
+
+        <button id="predict" class="primary" type="button">Classify activity</button>
+      </section>
+
+      <section class="panel" aria-live="polite">
+        <h2>Result</h2>
+        <p id="empty" class="muted">Fill in the readings or pick a preset, then classify.</p>
+        <p id="error" class="error" hidden></p>
+        <div id="result" hidden>
+          <p class="activity" id="activity"></p>
+          <ul id="bars"></ul>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const FIELDS = ["heart_rate", "accel_mean", "accel_std", "cadence"];
+    const PRESETS = {
+      resting: [64, 1.0, 0.02, 0],
+      walking: [95, 1.1, 0.3, 105],
+      running: [155, 1.8, 0.9, 170],
+      cycling: [130, 1.2, 0.45, 80],
+    };
+
+    document.querySelectorAll("[data-preset]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        PRESETS[btn.dataset.preset].forEach((v, i) => {
+          document.getElementById(FIELDS[i]).value = v;
+        });
+      });
+    });
+
+    document.getElementById("predict").addEventListener("click", async () => {
+      const payload = {};
+      FIELDS.forEach((f) => (payload[f] = document.getElementById(f).value));
+
+      const empty = document.getElementById("empty");
+      const error = document.getElementById("error");
+      const result = document.getElementById("result");
+      empty.hidden = true; error.hidden = true; result.hidden = true;
+
+      try {
+        const res = await fetch("/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Something went wrong.");
+
+        document.getElementById("activity").textContent = data.activity;
+        const bars = document.getElementById("bars");
+        bars.innerHTML = "";
+        Object.entries(data.probabilities)
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([label, p]) => {
+            const li = document.createElement("li");
+            li.innerHTML = `<span>${label}</span><div class="track"><div class="fill" style="width:${(p * 100).toFixed(0)}%"></div></div><span>${(p * 100).toFixed(0)}%</span>`;
+            bars.appendChild(li);
+          });
+        result.hidden = false;
+      } catch (err) {
+        error.textContent = err.message;
+        error.hidden = false;
+      }
+    });
+  </script>
+</body>
+</html>
